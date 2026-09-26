@@ -1,0 +1,17 @@
+.streamer/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/
+*.test
+*.exe
+.DS_Store
+.env
+.env.*
+!.env.example
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.log

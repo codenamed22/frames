@@ -1,0 +1,43 @@
+name: frame-cadence
+
+services:
+  postgres:
+    image: postgres:17.4
+    environment:
+      POSTGRES_USER: cadence
+      POSTGRES_PASSWORD: cadence-local-development
+    volumes:
+      - cadence-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cadence"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  cadence:
+    image: ubercadence/server:v1.3.5-auto-setup
+    environment:
+      DB: postgres
+      DB_PORT: "5432"
+      POSTGRES_USER: cadence
+      POSTGRES_PWD: cadence-local-development
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development.yaml
+    ports:
+      - "127.0.0.1:7833:7833"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  cadence-web:
+    image: ubercadence/web:v4.0.0
+    platform: linux/amd64
+    environment:
+      CADENCE_GRPC_PEERS: cadence:7833
+    ports:
+      - "127.0.0.1:8088:8088"
+    depends_on:
+      - cadence
+
+volumes:
+  cadence-db:
