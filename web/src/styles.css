@@ -200,6 +200,146 @@ main {
   gap: 48px;
   align-items: start;
 }
+.breadcrumbs {
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 28px;
+  font-size: 13px;
+}
+.breadcrumbs > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.breadcrumbs button {
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+.breadcrumbs svg {
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.library-tools {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: min(100%, 340px);
+  flex-shrink: 0;
+}
+.folder-grid,
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
+  gap: 24px;
+  margin-bottom: 36px;
+}
+.folder-tile {
+  min-height: 100px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #202522;
+  text-align: left;
+}
+.folder-tile:hover {
+  border-color: var(--accent);
+}
+.folder-tile > svg {
+  flex-shrink: 0;
+  color: var(--coral);
+}
+.folder-tile > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.folder-tile strong {
+  display: block;
+  font-weight: 550;
+}
+.folder-tile small,
+.item-state {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 8px;
+}
+.library-video {
+  min-width: 0;
+}
+.poster-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  color: #728378;
+  background: repeating-linear-gradient(
+    135deg,
+    #202724,
+    #202724 12px,
+    #232a27 12px,
+    #232a27 13px
+  );
+}
+.poster-placeholder > svg {
+  transform: translateX(-60px);
+}
+.library-video .poster-play {
+  width: 52px;
+  height: 52px;
+}
+.library-caption {
+  padding: 16px 0;
+}
+.library-caption h2 {
+  font-size: 17px;
+}
+.state-ready {
+  color: var(--accent);
+}
+.state-failed,
+.state-cancelled {
+  color: var(--coral);
+}
+.preparation-state {
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 20px;
+  border-block: 1px solid var(--line);
+}
+.preparation-state h2 {
+  font-size: 23px;
+}
+.preparation-state p,
+.library-status {
+  color: var(--muted);
+  font-size: 14px;
+}
+.library-status {
+  margin-bottom: 20px;
+}
+.spinning {
+  animation: library-spin 1.2s linear infinite;
+}
+@keyframes library-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}
 .poster-button {
   position: relative;
   display: block;

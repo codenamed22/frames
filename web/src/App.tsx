@@ -12,9 +12,11 @@ import {
   Wifi,
 } from "lucide-react";
 import { Player } from "./Player";
+import { Library, type LibraryListing } from "./Library";
 import { formatBytes, formatTime, readProgress, type Video } from "./media";
 
 function App() {
+  const [library, setLibrary] = useState<LibraryListing | null>(null);
   const [video, setVideo] = useState<Video | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -25,8 +27,14 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    fetch("/api/video", { signal: controller.signal })
+    fetch("/api/library", { signal: controller.signal })
       .then(async (response) => {
+        if (response.ok) {
+          setLibrary((await response.json()) as LibraryListing);
+          return null;
+        }
+        if (response.status === 404)
+          response = await fetch("/api/video", { signal: controller.signal });
         if (!response.ok)
           throw new Error(`Media server returned ${response.status}.`);
         return (await response.json()) as Video;
@@ -57,6 +65,8 @@ function App() {
 
   const progress = video ? readProgress(video.id) : 0;
   const matches = video?.title.toLowerCase().includes(query.toLowerCase());
+
+  if (library) return <Library initial={library} />;
 
   return (
     <div className="app-shell">

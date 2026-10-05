@@ -7,6 +7,12 @@ import (
 
 func TestResolveSource(t *testing.T) {
 	root := t.TempDir()
+	if input, library, relative, err := resolveSource("", root); err != nil || input != "" || library != root || relative != "" {
+		t.Fatalf("library-only startup = %q, %q, %q, %v", input, library, relative, err)
+	}
+	if _, _, _, err := resolveSource("", ""); err == nil {
+		t.Fatal("empty configuration accepted")
+	}
 	input := filepath.Join(root, "Movies", "Example.mp4")
 	resolvedInput, resolvedRoot, relative, err := resolveSource(input, root)
 	if err != nil {

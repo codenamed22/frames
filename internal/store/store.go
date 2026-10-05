@@ -334,3 +334,7 @@ func (store *Store) ListMedia(ctx context.Context) ([]MediaItem, error) {
 	}
 	return items, nil
 }
+
+func (store *Store) ReadyMediaByVersion(ctx context.Context, version string) (MediaItem, error) {
+	return scanMedia(store.db.QueryRowContext(ctx, "SELECT "+mediaColumns+" FROM media_items WHERE ready_version = ? AND available = 1 AND preparation_state = 'ready' LIMIT 1", version))
+}

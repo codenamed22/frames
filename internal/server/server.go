@@ -11,16 +11,18 @@ import (
 	"regexp"
 	"strings"
 
+	"streamer/internal/library"
 	"streamer/internal/media"
 )
 
 var assetName = regexp.MustCompile(`^(manifest\.mpd|master\.m3u8|media_[0-9]+\.m3u8|init-stream[0-9]+\.m4s|init-stream[0-9]+\.mp4|chunk-stream[0-9]+-[0-9]+\.m4s|poster\.jpg)$`)
 
 type Server struct {
-	Video media.Video
-	Media *os.Root
-	Web   *os.Root
-	Hosts map[string]bool
+	Video   media.Video
+	Media   *os.Root
+	Web     *os.Root
+	Hosts   map[string]bool
+	Library *library.Manager
 }
 
 func New(video media.Video, cache, web string, hosts []string) (*Server, error) {
@@ -52,7 +54,17 @@ func (server *Server) Close() {
 
 func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	if server.Library != nil {
+		mux.HandleFunc("GET /api/library", server.browse)
+		mux.HandleFunc("POST /api/library/rescan", server.rescan)
+		mux.HandleFunc("GET /api/videos/{id}", server.item)
+		mux.HandleFunc("POST /api/videos/{id}/prepare", server.prepare)
+	}
 	mux.HandleFunc("GET /api/video", func(writer http.ResponseWriter, request *http.Request) {
+		if server.Library != nil {
+			http.NotFound(writer, request)
+			return
+		}
 		writer.Header().Set("Content-Type", "application/json")
 		writer.Header().Set("Cache-Control", "no-store")
 		_ = json.NewEncoder(writer).Encode(server.Video)
@@ -63,7 +75,7 @@ func (server *Server) Handler() http.Handler {
 	})
 	mux.HandleFunc("GET /media/{id}/{name}", server.asset)
 	mux.HandleFunc("GET /", server.frontend)
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+	return http.NewCrossOriginProtection().Handler(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		host, _, err := net.SplitHostPort(request.Host)
 		if err != nil {
 			host = strings.Trim(request.Host, "[]")
@@ -77,16 +89,22 @@ func (server *Server) Handler() http.Handler {
 		writer.Header().Set("X-Frame-Options", "DENY")
 		writer.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self'; font-src 'self' data:; worker-src 'self' blob:; object-src 'none'; frame-ancestors 'none'; base-uri 'self'")
 		mux.ServeHTTP(writer, request)
-	})
+	}))
 }
 
 func (server *Server) asset(writer http.ResponseWriter, request *http.Request) {
 	name := request.PathValue("name")
-	if request.PathValue("id") != server.Video.ID || !assetName.MatchString(name) {
+	version := request.PathValue("id")
+	allowed := version == server.Video.ID
+	if server.Library != nil {
+		_, err := server.Library.Catalog.ReadyMediaByVersion(request.Context(), version)
+		allowed = err == nil
+	}
+	if !allowed || !assetName.MatchString(name) {
 		http.NotFound(writer, request)
 		return
 	}
-	file, err := server.Media.Open(server.Video.ID + "/" + name)
+	file, err := server.Media.Open(version + "/" + name)
 	if err != nil {
 		http.NotFound(writer, request)
 		return

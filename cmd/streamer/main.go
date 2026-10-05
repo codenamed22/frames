@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	medialibrary "streamer/internal/library"
 	"streamer/internal/media"
 	"streamer/internal/preparation"
 	"streamer/internal/server"
@@ -29,7 +30,7 @@ func main() {
 }
 
 func run() error {
-	input := flag.String("input", "", "local SDR video to prepare and serve (required)")
+	input := flag.String("input", "", "optional single SDR video to prepare and serve")
 	library := flag.String("library", "", "media library root; defaults to the selected video's directory")
 	cache := flag.String("cache", ".streamer/cache", "generated media directory; originals are never modified")
 	data := flag.String("data", ".streamer/frame.db", "SQLite catalog path")
@@ -43,8 +44,11 @@ func run() error {
 	cadenceAddress := flag.String("cadence-address", preparation.DefaultAddress, "Cadence gRPC frontend")
 	cadenceDomain := flag.String("cadence-domain", preparation.DefaultDomain, "Cadence domain")
 	flag.Parse()
-	if *input == "" {
-		return errors.New("choose a video: go run ./cmd/streamer -input \"/path/to/video.mp4\"")
+	if *input == "" && *library == "" {
+		return errors.New("choose a library: go run ./cmd/streamer -library \"/path/to/videos\"")
+	}
+	if *input == "" && *useCadence {
+		return errors.New("Cadence mode currently requires -input; omit -cadence for folder browsing")
 	}
 	if *port < 1 || *port > 65535 {
 		return errors.New("port must be between 1 and 65535")
@@ -53,10 +57,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	mediaID, err := store.MediaID(sourcePath)
-	if err != nil {
-		return err
-	}
+	mediaID, _ := store.MediaID(sourcePath)
 	catalog, err := store.Open(*data)
 	if err != nil {
 		return err
@@ -99,46 +100,60 @@ func run() error {
 		return fmt.Errorf("cannot listen on %s (choose another -port): %w", address, err)
 	}
 	defer listener.Close()
-	var video media.Video
-	if *useCadence {
-		connection, err := preparation.Connect(*cadenceAddress, *cadenceDomain)
+	var app *server.Server
+	if *input == "" {
+		manager, err := medialibrary.NewManager(catalog, libraryRoot, *cache, tools)
 		if err != nil {
 			return err
 		}
-		defer connection.Close()
-		taskList, err := preparation.TaskList(libraryRoot, *cache, *data)
+		defer manager.Close()
+		app, err = server.New(media.Video{}, *cache, *web, hosts)
 		if err != nil {
 			return err
 		}
-		execution, err := preparation.Start(ctx, connection.Client, taskList, sourcePath)
-		if err != nil {
-			return err
-		}
-		id, _ := preparation.WorkflowID(taskList, sourcePath)
-		log.Printf("Waiting for Cadence: workflow=%s run=%s; Ctrl+C detaches, it does not cancel the job", id, execution.GetRunID())
-		if err := execution.Get(ctx, &video); err != nil {
-			return err
-		}
+		app.Library = manager
 	} else {
-		log.Print("Preparing selected video (or reusing its completed cache). This can take several minutes; Ctrl+C cancels.")
-		preparing, cancel := context.WithTimeout(ctx, 12*time.Hour)
-		video, err = tools.Prepare(preparing, inputPath, *cache)
-		cancel()
-		if err != nil {
-			return err
+		var video media.Video
+		if *useCadence {
+			connection, err := preparation.Connect(*cadenceAddress, *cadenceDomain)
+			if err != nil {
+				return err
+			}
+			defer connection.Close()
+			taskList, err := preparation.TaskList(libraryRoot, *cache, *data)
+			if err != nil {
+				return err
+			}
+			execution, err := preparation.Start(ctx, connection.Client, taskList, sourcePath)
+			if err != nil {
+				return err
+			}
+			id, _ := preparation.WorkflowID(taskList, sourcePath)
+			log.Printf("Waiting for Cadence: workflow=%s run=%s; Ctrl+C detaches, it does not cancel the job", id, execution.GetRunID())
+			if err := execution.Get(ctx, &video); err != nil {
+				return err
+			}
+		} else {
+			log.Print("Preparing selected video (or reusing its completed cache). This can take several minutes; Ctrl+C cancels.")
+			preparing, cancel := context.WithTimeout(ctx, 12*time.Hour)
+			video, err = tools.Prepare(preparing, inputPath, *cache)
+			cancel()
+			if err != nil {
+				return err
+			}
+			if err := catalog.UpsertMedia(ctx, store.MediaItem{
+				ID: mediaID, SourcePath: sourcePath, SourceFingerprint: video.SourceFingerprint,
+				Title: video.Title, Duration: video.Duration, Width: video.Width, Height: video.Height,
+				Codec: video.Codec, HasAudio: video.Audio, SourceBytes: video.Bytes, Available: true,
+				PreparationState: store.StateReady, ReadyVersion: video.ID,
+				DASHPath: video.Stream, HLSPath: video.HLS, PosterPath: video.Poster,
+				PreparedBytes: video.PreparedBytes,
+			}); err != nil {
+				return fmt.Errorf("save prepared video to catalog: %w", err)
+			}
 		}
-		if err := catalog.UpsertMedia(ctx, store.MediaItem{
-			ID: mediaID, SourcePath: sourcePath, SourceFingerprint: video.SourceFingerprint,
-			Title: video.Title, Duration: video.Duration, Width: video.Width, Height: video.Height,
-			Codec: video.Codec, HasAudio: video.Audio, SourceBytes: video.Bytes, Available: true,
-			PreparationState: store.StateReady, ReadyVersion: video.ID,
-			DASHPath: video.Stream, HLSPath: video.HLS, PosterPath: video.Poster,
-			PreparedBytes: video.PreparedBytes,
-		}); err != nil {
-			return fmt.Errorf("save prepared video to catalog: %w", err)
-		}
+		app, err = server.New(video, *cache, *web, hosts)
 	}
-	app, err := server.New(video, *cache, *web, hosts)
 	if err != nil {
 		return err
 	}
@@ -170,6 +185,13 @@ func run() error {
 }
 
 func resolveSource(input, configuredRoot string) (string, string, string, error) {
+	if input == "" {
+		if configuredRoot == "" {
+			return "", "", "", errors.New("library root is required without an input video")
+		}
+		root, err := filepath.Abs(configuredRoot)
+		return "", root, "", err
+	}
 	inputPath, err := filepath.Abs(input)
 	if err != nil {
 		return "", "", "", fmt.Errorf("resolve input path: %w", err)

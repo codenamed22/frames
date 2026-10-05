@@ -145,6 +145,10 @@ func (tools Tools) Check() error {
 	return nil
 }
 
+func Fingerprint(path string) (string, error) {
+	return fingerprint(path)
+}
+
 func fingerprint(path string) (string, error) {
 	info, err := os.Stat(path)
 	if err != nil {
